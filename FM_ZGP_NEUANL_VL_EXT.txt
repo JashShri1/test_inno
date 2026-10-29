@@ -1,0 +1,123 @@
+FUNCTION /vwk/zgp_neuanl_vl_ext.
+*"----------------------------------------------------------------------
+*"*"Lokale Schnittstelle:
+*"  IMPORTING
+*"     REFERENCE(IV_PARTNER) TYPE  BU_PARTNER
+*"     REFERENCE(IV_DEST_SYSTEM_NAME) TYPE  /VWK/SKS_DEST_SYSTEM_NAME
+*"     REFERENCE(IV_FUNCTION_EXTERN) TYPE  /VWK/SKS_FUNCTION_EXTERN
+*"     REFERENCE(IV_BVB_VL_LEAS) TYPE  /VWK/ZGPS_BVB_VL_LEAS OPTIONAL
+*"     REFERENCE(IV_TCODE) TYPE  CHAR30
+*"     REFERENCE(IV_MODE) TYPE  CHAR1
+*"     REFERENCE(IV_UPDATE) TYPE  CHAR1
+*"     REFERENCE(IV_TEST) TYPE  CHAR1 DEFAULT SPACE
+*"     REFERENCE(IS_GPEXT) TYPE  /VWK/ZGPS_GPEXT
+*"  CHANGING
+*"     REFERENCE(CV_ZIEL_ID) TYPE  /VWK/SKS_ID_OF_DESTOBJECT
+*"  EXCEPTIONS
+*"      VL_NICHT_ANGELEGT
+*"----------------------------------------------------------------------
+
+*----------------------------------------------------------------------*
+* 001 2008-02-06 Jens Knottnerus (DKX1KNS)
+*     Initialisierung der Ziel-Id im Fehlerfalle.
+*----------------------------------------------------------------------*
+* DKX0AUS IM1426784 12.04.18: Konzernringprüfung Missing AUTHORITY-CHECK before
+*                                                CALL TRANSACTION
+
+* Lokale Datendklarationen
+  DATA: lv_subrc            LIKE sy-subrc.
+
+
+* Versorgung der Dynpros
+  PERFORM dynpro_tabelle_vl  USING     iv_partner
+                                       iv_test
+                                       iv_dest_system_name
+                                       iv_function_extern
+                                       iv_bvb_vl_leas
+                                       is_gpext
+                             CHANGING  cv_ziel_id.
+
+* Aufrufen der Transaktion TCODE:
+* -------------------------------
+* - MODE:
+*   - 'A' Anzeigen der Dynpros
+*   - 'E' Anzeigen nur, wenn ein Fehler auftrat
+*   - 'N' keine Anzeige
+* - UPDATE:
+*   - 'A' asynchrone Verbuchung
+*   - 'S' synchrone Verbuchung
+*   - 'L' lokale Verbuchung
+
+  IF iv_test IS INITIAL.
+*   Kein Testlauf: Modus aus Eingabe übernehmen
+    gv_mode = iv_mode.
+  ELSE.
+*   Testlauf: Modus "A" (alles zeigen)
+    gv_mode = 'A'.
+  ENDIF.
+
+* Versorgung der Parameter für CALL TRANSACTION
+  gs_opt-dismode = gv_mode.
+  gs_opt-updmode = iv_update.
+  REFRESH gt_messages.
+
+* Parameter-ID für Ziel-ID mit Dummyeintrag versorgen
+  SET PARAMETER ID '/VWK/SKS_IOD' FIELD gc_ziel_id_dummy.
+
+  AUTHORITY-CHECK OBJECT 'S_TCODE'
+  ID 'TCD' FIELD '/VWK/SKS_ZVTE'.
+  IF sy-subrc = 0.
+
+* Aufruf der Transaktion
+    CALL TRANSACTION '/VWK/SKS_ZVTE' USING    bdc_daten
+                              OPTIONS  FROM gs_opt
+                              MESSAGES INTO gt_messages.
+  ELSE.
+    MESSAGE e077 WITH iv_partner iv_dest_system_name
+*   Fehler bei der Anlage der Verteilerliste zu GP &1 und Zielsystem &2
+      RAISING vl_nicht_angelegt.
+  ENDIF.
+
+  lv_subrc = sy-subrc.
+
+* Parameter-ID für Ziel-ID lesen
+  GET PARAMETER ID '/VWK/SKS_IOD' FIELD cv_ziel_id.
+
+  IF lv_subrc IS INITIAL       AND
+     sy-subrc IS INITIAL       AND
+     NOT cv_ziel_id IS INITIAL AND
+     cv_ziel_id NE gc_ziel_id_dummy.
+*   Neuanlage fehlerfrei
+  ELSE.
+*   Parameter-ID für Ziel-ID nicht gefüllt bzw. immer noch mit
+*   Dummyeintrag gefüllt? (Es kommt vor, dass nach einem fehlerhaften
+*   Call Transaction sy-subrc trotzdem 0 ist):
+*   - Fehlertabelle nach der ersten Warn-, Fehler oder
+*     Abbruchmeldung absuchen
+
+*   Wenn als Ziel-Id der Dummyeintrag zurück geliefert wird, muss er
+*   initialisiert werden, da sonst in der weiteren Verarbeitung mit dem
+*   Dummyeintrag weiter gearbeitet wird.
+    CLEAR: cv_ziel_id.
+
+    LOOP AT gt_messages INTO gs_messages.
+      CHECK NOT
+      ( gs_messages-msgtyp = gc_msgty_success OR
+        gs_messages-msgtyp = gc_msgty_info ).
+
+      gv_fehlerart = gc_fehler_vl_pflege.
+      MESSAGE ID gs_messages-msgid TYPE gs_messages-msgtyp
+        NUMBER gs_messages-msgnr
+        WITH gs_messages-msgv1 gs_messages-msgv2
+             gs_messages-msgv3 gs_messages-msgv4
+        RAISING vl_nicht_angelegt.
+    ENDLOOP.
+
+*   Zur Sicherheit noch Mal die Fehlermeldung
+    gv_fehlerart = gc_fehler_vl_pflege.
+    MESSAGE e077 WITH iv_partner iv_dest_system_name
+*   Fehler bei der Anlage der Verteilerliste zu GP &1 und Zielsystem &2
+      RAISING vl_nicht_angelegt.
+  ENDIF.
+
+ENDFUNCTION.

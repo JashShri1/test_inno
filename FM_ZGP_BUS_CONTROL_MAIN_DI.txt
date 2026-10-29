@@ -1,0 +1,279 @@
+FUNCTION /vwk/zgp_bus_control_main_di.
+*"----------------------------------------------------------------------
+*"*"Lokale Schnittstelle:
+*"  IMPORTING
+*"     REFERENCE(IV_AKTYP) TYPE  TBZ0K-AKTYP
+*"     REFERENCE(IV_PARTNER) TYPE  BUT000-PARTNER OPTIONAL
+*"     REFERENCE(IV_BPEXT) TYPE  BUT000-BPEXT OPTIONAL
+*"     REFERENCE(IV_TYPE) TYPE  BUT000-TYPE OPTIONAL
+*"     REFERENCE(IV_BPKIND) TYPE  BUT000-BPKIND OPTIONAL
+*"     REFERENCE(IV_GROUP) TYPE  BUT000-BU_GROUP OPTIONAL
+*"     REFERENCE(IV_RLTYP) TYPE  BU_PARTNERROLECAT OPTIONAL
+*"     REFERENCE(IS_BUS000_DI) TYPE  BUS000_DI OPTIONAL
+*"     REFERENCE(IS_BUS001_DI) TYPE  BUS001_DI OPTIONAL
+*"     REFERENCE(IS_DSKWSP) TYPE  /VWK/ZGPS_DSKWSP_ATTR_DI OPTIONAL
+*"     REFERENCE(IS_GW_HDR) TYPE  /VWK/ZGPS_GW_HDR_DI OPTIONAL
+*"     REFERENCE(IV_XUPDTASK) TYPE  XFELD OPTIONAL
+*"     REFERENCE(IV_XCOMMIT) TYPE  XFELD OPTIONAL
+*"     REFERENCE(IV_XTEST) TYPE  XFELD OPTIONAL
+*"  EXPORTING
+*"     VALUE(EV_XERROR) TYPE  BUS000FLDS-CHAR1
+*"  TABLES
+*"      IT_BUS020_DI STRUCTURE  BUS020_DI OPTIONAL
+*"      IT_BUS021_DI STRUCTURE  BUS021_DI OPTIONAL
+*"      IT_BUS0BK_DI STRUCTURE  BUS0BK_DI OPTIONAL
+*"      IT_VERMITT_DI STRUCTURE  /VWK/ZGP_STR_VERMITTLER_DI OPTIONAL
+*"      IT_KENNZ_ZUL_DI STRUCTURE  /VWK/ZGP_STR_KENNZ_ZUL_DI OPTIONAL
+*"      IT_BUTBUKR_DI STRUCTURE  /VWK/ZGP_STR_BUTBUKR_DI OPTIONAL
+*"      IT_ZGP_BUT0BK_DI STRUCTURE  /VWK/ZGPS_STR_BUT0BK_DI OPTIONAL
+*"      IT_FS_DI STRUCTURE  /VWK/ZGPS_STR_FS_DI OPTIONAL
+*"      IT_FSKL_DI STRUCTURE  /VWK/ZGPS_STR_FSKL_DI OPTIONAL
+*"      IT_BUTLAND_DI STRUCTURE  /VWK/ZGP_STR_BUTLAND_DI OPTIONAL
+*"      IT_MARKETING_DI STRUCTURE  /VWK/ZGPS_MAAUTH_DI OPTIONAL
+*"      IT_GW_POS STRUCTURE  /VWK/ZGPS_GW_POS_DI OPTIONAL
+*"      IT_NAMEPREP_HDR STRUCTURE  /VWK/ZGPS_NAMEPREP_HDR_DI OPTIONAL
+*"      IT_NAMEPREP_POS STRUCTURE  /VWK/ZGPS_NAMEPREP_POS_DI OPTIONAL
+*"      ET_MESSAGE STRUCTURE  BUS0MSG1 OPTIONAL
+*"      ET_KEYVALUE STRUCTURE  BUSSKEYVAL OPTIONAL
+*"      ET_MESSAGE_DI STRUCTURE  BUSSPROT_X OPTIONAL
+*"      IT_BUS0ID_DI STRUCTURE  BUS0ID_DI OPTIONAL
+*"      TT_TAX_DI STRUCTURE  FKKBPTAX_DI OPTIONAL
+*"      TT_DSIWSP_DI STRUCTURE  /VWK/ZGPS_DSIWSP_DI OPTIONAL
+*"      TT_ONL_PO_DI STRUCTURE  /VWK/ZGPS_ONL_PO_DI OPTIONAL
+*"      IT_RECHNUNG_DI STRUCTURE  /VWK/ZGP_STR_XRECHNUNG_DI OPTIONAL
+*"----------------------------------------------------------------------
+* 001 2009-10-26 [PP9091/00] Jens Knottnerus (DKX1KNS)
+*     Einbau Marketingberechtigungen
+* 002 2010-07-09 [W006778] Jochen Mersmann (DKX0MRS)
+*     Erweiterung um Wirtschaftlich Berechtigte
+* 003 2010-11-23 [WW007653] Detlef Wagner (DKX83HK)
+*     Erweiterung um die Identifikationsnummer.
+* 004 2018-03-19 [PP4864] Jochen Mersmann (DKX0MRS)
+*     Erweiterung um Steuernummern
+* 005 2018-04-10 [W041704] Viktor Jakobi (DKX8P7I)
+*     Erweiterung um DSI-Widersprüche
+* 006 2024-04-16 [C10032-2903] Ignacio Armendariz Freire (DKX8ZZ8)
+*     Extension to include personal mailbox
+************************************************************************
+* 007 2024-06-28 Rohit Kadam (DKX875T)
+* Purpose : C10032-4069: X-Rechnung input data processing
+* TR :  F3DK9A3EDF
+************************************************************************
+*----------------------------------------------------------------------*
+
+* Lokale Datendeklarationen
+  DATA: lt_data LIKE TABLE OF bussdi.
+
+* Header-Daten
+  CALL FUNCTION 'BUP_DI_DATA_HEADER'
+    EXPORTING
+      i_aktyp   = iv_aktyp
+      i_partner = iv_partner
+      i_bpext   = iv_bpext
+      i_type    = iv_type
+      i_bpkind  = iv_bpkind
+      i_group   = iv_group
+      i_rltyp   = iv_rltyp
+    TABLES
+      t_data    = lt_data.
+
+* Datensätze erzeugen
+* -------------------
+* BUT000
+  IF NOT is_bus000_di IS INITIAL.
+    CALL FUNCTION 'BUP_DI_DATA_COMMON'
+      EXPORTING
+        i_but000 = is_bus000_di
+      TABLES
+        t_data   = lt_data.
+  ENDIF.
+
+* BUS001
+  IF NOT is_bus001_di IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUS001_DI'
+      EXPORTING
+        is_bus001 = is_bus001_di
+      TABLES
+        t_data    = lt_data.
+  ENDIF.
+
+* BUT020
+  IF NOT it_bus020_di[] IS INITIAL.
+    CALL FUNCTION 'BUA_DI_DATA_ADDRESS'
+      TABLES
+        t_but020 = it_bus020_di
+        t_data   = lt_data.
+  ENDIF.
+
+* BUT021
+  IF NOT it_bus021_di[] IS INITIAL.
+    CALL FUNCTION 'BUA_DI_DATA_ADUSE'
+      TABLES
+        t_but021 = it_bus021_di
+        t_data   = lt_data.
+  ENDIF.
+
+* BUT0BK
+  IF NOT it_bus0bk_di[] IS INITIAL.
+    CALL FUNCTION 'BUP_DI_DATA_BANK'
+      TABLES
+        t_but0bk = it_bus0bk_di
+        t_data   = lt_data.
+  ENDIF.
+
+* Kundeneigene Bankverbindungsdaten (/VWK/ZGPD_BUT0BK)
+  IF NOT it_zgp_but0bk_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUT0BK_DI'
+      TABLES
+        t_zgp_but0bk = it_zgp_but0bk_di
+        t_data       = lt_data.
+  ENDIF.
+
+* Vermittler (/VWK/ZGP_VERMITT)
+  IF NOT it_vermitt_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUPA_VERMIT_DI'
+      TABLES
+        t_vermitt = it_vermitt_di
+        t_data    = lt_data.
+  ENDIF.
+
+* Kennzeichen Zulassungsbezirke (/VWK/ZGP_KENNZ_ZUL)
+  IF NOT it_kennz_zul_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUPA_KENNZ_DI'
+      TABLES
+        t_kennz = it_kennz_zul_di
+        t_data  = lt_data.
+  ENDIF.
+
+* Buchungskreisdaten (/VWK/ZGP_BUTBUKR)
+  IF NOT it_butbukr_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUTBUKR_DI'
+      TABLES
+        t_butbukr = it_butbukr_di
+        t_data    = lt_data.
+  ENDIF.
+
+* Landesspezifische GP-Daten (/VWK/ZGP_BUTLAND)
+  IF NOT it_butland_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_BUTLAND_DI'
+      TABLES
+        t_butland = it_butland_di
+        t_data    = lt_data.
+  ENDIF.
+
+* Führerscheindaten (/VWK/ZGPD_FS)
+  IF NOT it_fs_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_FS_DI'
+      TABLES
+        t_fs   = it_fs_di
+        t_data = lt_data.
+  ENDIF.
+
+* Führerscheinklassen (/VWK/ZGPD_FSKL)
+  IF NOT it_fskl_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_FSKL_DI'
+      TABLES
+        t_fskl = it_fskl_di
+        t_data = lt_data.
+  ENDIF.
+
+* Marketingberechtigungen (/VWK/ZGPD_MAAUT)
+  IF NOT it_marketing_di[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_MAAUTH_DI'
+      TABLES
+        it_marketing = it_marketing_di
+        it_data      = lt_data.
+  ENDIF.
+
+* Kopfdaten für Wirtschaftlich Berechtigte
+  IF NOT is_gw_hdr IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_GW_HDR_DI'
+      EXPORTING
+        is_wb_hdr = is_gw_hdr
+      TABLES
+        et_data   = lt_data.
+  ENDIF.
+
+* Positionsdaten für Wirtschaftlich Berechtigte
+  IF NOT it_gw_pos[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_ZGP_GW_POS_DI'
+      TABLES
+        it_wb_pos = it_gw_pos
+        et_data   = lt_data.
+  ENDIF.
+
+* Kopfdaten für Namensaufbereitung an lt_data hängen
+  IF NOT it_nameprep_hdr[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_NAMEPREP_HDR_DI'
+      TABLES
+        it_nameprep_hdr = it_nameprep_hdr
+        et_data         = lt_data.
+  ENDIF.
+
+*	Positionsdaten für Namensaufbereitung an lt_data hängen:
+  IF NOT it_nameprep_pos[] IS INITIAL.
+    CALL FUNCTION '/VWK/ZGP_NAMEPREP_POS_DI'
+      TABLES
+        it_nameprep_pos = it_nameprep_pos
+        et_data         = lt_data.
+  ENDIF.
+
+* Identifikationsnummern (BUT0ID)
+  IF NOT it_bus0id_di[] IS INITIAL.
+    CALL FUNCTION 'BUP_DI_DATA_IDNUM'
+      TABLES
+        t_but0id = it_bus0id_di
+        t_data   = lt_data.
+  ENDIF.
+
+  IF tt_tax_di[] IS NOT INITIAL.
+    "Steuernummern vorhanden: Übertragen
+    CALL FUNCTION '/VWK/ZGP_TAX_DI'
+      EXPORTING
+        it_tax_di = tt_tax_di[]
+      CHANGING
+        ct_data   = lt_data.
+  ENDIF.
+
+  IF tt_dsiwsp_di[] IS NOT INITIAL.
+    "DSI-Widersprüche vorhanden: Übertragen
+    CALL FUNCTION '/VWK/ZGP_DSIWSP_DI'
+      EXPORTING
+        it_dsiwsp_di = tt_dsiwsp_di[]
+      CHANGING
+        ct_data      = lt_data.
+  ENDIF.
+
+  IF tt_onl_po_di[] IS NOT INITIAL.
+    " Personal online mailbox
+    CALL FUNCTION '/VWK/ZGP_ONL_PO_DI'
+      EXPORTING
+        it_onl_po_di = tt_onl_po_di[]
+      CHANGING
+        ct_data      = lt_data.
+  ENDIF.
+*BOI:007
+* Fill X-Rechnung Data (/VWK/ZGP_RCHNUNG)
+   IF it_rechnung_di[] IS NOT INITIAL.
+      CALL FUNCTION '/VWK/ZGP_RECHNUNG_DI'
+        TABLES
+          t_rechnung =   it_rechnung_di[]
+        CHANGING
+          ct_data    =     lt_data.
+  ENDIF.
+*EOI:007
+* Dunkle Pflege aufrufen
+  CALL FUNCTION 'BUS_CONTROL_MAIN_DI'
+    EXPORTING
+      i_objap    = 'BUPA'
+      i_xupdtask = iv_xupdtask
+      i_xcommit  = iv_xcommit
+      i_xtest    = iv_xtest
+    IMPORTING
+      e_xerror   = ev_xerror
+    TABLES
+      t_data     = lt_data
+      t_message  = et_message
+      t_keyvalue = et_keyvalue.
+
+ENDFUNCTION.
